@@ -92,6 +92,11 @@ class CPDF_Adapter implements Canvas {
     "8.5x14" => array(0,0,612.00,1008.0),
     "11x17"  => array(0,0,792.00, 1224.00),
   );
+  
+  private $_scaleflag_left=0;
+  private $_scaleflag_right=0;
+  private $_yscaleflag=array();
+  private $_margins=array(0, 0, 0, 0);
 
   /**
    * The DOMPDF object
@@ -201,6 +206,9 @@ class CPDF_Adapter implements Canvas {
     $this->_pages = array($this->_pdf->getFirstPageId());
 
     $this->_image_cache = array();
+    
+    $this->_scaleflag_left=$this->_width;
+    $this->_scaleflag_right=0;
   }
 
   function get_dompdf(){
@@ -236,6 +244,41 @@ class CPDF_Adapter implements Canvas {
     return $this->_pdf;
   }
 
+  function set_margins($margins=array(0, 0, 0, 0))
+  {
+    $this->_margins=$margins;
+  }
+  
+  function get_margins()
+  {
+    return $this->_margins;
+  }
+  
+  function get_scaleflags()
+  {
+    return array($this->_scaleflag_left, $this->_scaleflag_right);
+  }
+  
+  protected function _update_scaleflags($args=array())
+  {
+    foreach($args as $entry)
+    {
+        $this->_scaleflag_left=min($this->_scaleflag_left, $entry);
+        $this->_scaleflag_right=max($this->_scaleflag_right, $entry);
+    }
+  }
+
+  function get_yscaleflags()
+  {
+    return $this->_yscaleflag;
+  }
+  
+  protected function _update_yscaleflags($args=array())
+  {
+    foreach($args as $entry)
+        $this->_yscaleflag[$this->_page_number]=max($this->_yscaleflag[$this->_page_number], $this->y($entry));
+  }
+  
   /**
    * Add meta information to the PDF
    *
@@ -477,6 +520,9 @@ class CPDF_Adapter implements Canvas {
     
     $this->_pdf->line($x1, $this->y($y1),
                       $x2, $this->y($y2));
+
+    $this->_update_scaleflags(array($x1, $x2));
+    $this->_update_yscaleflags(array($this->y($y1), $this->y($y2)));
   }
   
   function arc($x, $y, $r1, $r2, $astart, $aend, $color, $width, $style = array()) {
@@ -484,6 +530,7 @@ class CPDF_Adapter implements Canvas {
     $this->_set_line_style($width, "butt", "", $style);
     
     $this->_pdf->ellipse($x, $this->y($y), $r1, $r2, 0, 8, $astart, $aend, false, false, true, false);
+    ///TODO: add scaleflag update
   }
                               
   //........................................................................
@@ -533,19 +580,29 @@ class CPDF_Adapter implements Canvas {
     $this->_set_stroke_color($color);
     $this->_set_line_style($width, "butt", "", $style);
     $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
+    
+    $this->_update_scaleflags(array($x1, $x1+$w));
+    $this->_update_yscaleflags(array($this->y($y1) - $h, $this->y($y1)));
   }
   
   function filled_rectangle($x1, $y1, $w, $h, $color) {
     $this->_set_fill_color($color);
     $this->_pdf->filledRectangle($x1, $this->y($y1) - $h, $w, $h);
+    
+    $this->_update_scaleflags(array($x1, $x1+$w));
+    $this->_update_yscaleflags(array($this->y($y1) - $h, $this->y($y1)));
   }
   
   function clipping_rectangle($x1, $y1, $w, $h) {
     $this->_pdf->clippingRectangle($x1, $this->y($y1) - $h, $w, $h);
+    
+    $this->_update_scaleflags(array($x1, $x1+$w));
+    $this->_update_yscaleflags(array($this->y($y1) - $h, $this->y($y1)));
   }
   
   function clipping_roundrectangle($x1, $y1, $w, $h, $rTL, $rTR, $rBR, $rBL) {
     $this->_pdf->clippingRectangleRounded($x1, $this->y($y1) - $h, $w, $h, $rTL, $rTR, $rBR, $rBL);
+    ///TODO: add scaleflag update
   }
   
   function clipping_end() {
@@ -566,10 +623,16 @@ class CPDF_Adapter implements Canvas {
   
   function skew($angle_x, $angle_y, $x, $y) {
     $this->_pdf->skew($angle_x, $angle_y, $x, $y);
+    
+    $this->_update_scaleflags(array($x));
+    $this->_update_yscaleflags(array($y));
   }
   
   function scale($s_x, $s_y, $x, $y) {
     $this->_pdf->scale($s_x, $s_y, $x, $y);
+    
+    $this->_update_scaleflags(array($x));
+    $this->_update_yscaleflags(array($y));
   }
   
   function translate($t_x, $t_y) {
@@ -589,6 +652,12 @@ class CPDF_Adapter implements Canvas {
       $points[$i] = $this->y($points[$i]);
     }
     
+    //set scaleflags
+    for ( $i = 0; $i < count($points); $i += 2)
+      $this->_update_scaleflags(array($points[$i]));
+    for ( $i = 1; $i < count($points); $i += 2)
+      $this->_update_yscaleflags(array($points[$i]));
+
     $this->_pdf->polygon($points, count($points) / 2, $fill);
   }
 
@@ -599,6 +668,9 @@ class CPDF_Adapter implements Canvas {
     if ( !$fill && isset($width) ) {
       $this->_set_line_style($width, "round", "round", $style);
     }
+
+    $this->_update_scaleflags(array($x+$r1, $x-$r1));
+    $this->_update_yscaleflags(array($this->y($y)+$r1, $this->y($y)-$r1));
 
     $this->_pdf->ellipse($x, $this->y($y), $r1, 0, 0, 8, 0, 360, 1, $fill);
   }
@@ -671,6 +743,9 @@ class CPDF_Adapter implements Canvas {
     //
     //$pdf->addText($x, $this->y($y) - ($pdf->fonts[$pdf->currentFont]['FontBBox'][3]*$size)/1000, $size, $text, $angle, $word_space, $char_space);
     $pdf->addText($x, $this->y($y) - $pdf->getFontHeight($size), $size, $text, $angle, $word_space, $char_space);
+    
+    $this->_update_scaleflags(array($x, $x+$this->get_text_width($text, $font, $size, $word_space, $char_space)));
+    $this->_update_yscaleflags(array($this->y($y) - $pdf->getFontHeight($size), $this->y($y) - ($pdf->getFontHeight($size) - $this->get_font_height($font, $size))));
   }
 
   //........................................................................
@@ -716,6 +791,9 @@ class CPDF_Adapter implements Canvas {
     else {
       $this->_pdf->addLink(rawurldecode($url), $x, $y, $x + $width, $y + $height);
     }
+    
+    $this->_update_scaleflags(array($x, $x+$width));
+    $this->_update_yscaleflags(array($y, $y+$height));
   }
 
   function get_text_width($text, $font, $size, $word_spacing = 0, $char_spacing = 0) {

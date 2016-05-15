@@ -852,7 +852,7 @@ class DOMPDF {
   /**
    * Renders the HTML to PDF
    */
-  function render() {
+  function render($margins=array(0, 0, 0, 0)) {
     $this->save_locale();
 
     $log_output_file = $this->get_option("log_output_file");
@@ -886,6 +886,7 @@ class DOMPDF {
     }
 
     $this->_pdf = Canvas_Factory::get_instance($this, $this->_paper_size, $this->_paper_orientation);
+    $this->_pdf->set_margins($margins);
     Font_Metrics::init($this->_pdf);
 
     if ( $this->get_option("enable_font_subsetting") && $this->_pdf instanceof CPDF_Adapter ) {
